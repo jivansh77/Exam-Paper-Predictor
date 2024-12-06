@@ -16,21 +16,32 @@ class ExamPaperProcessor:
         self.doc2vec = None
         
     def extract_from_pdf(self, pdf_path):
-        """Extract text from PDF, handling both text and image-based PDFs"""
+        """Extract text from PDF with improved formatting preservation"""
         try:
             with pdfplumber.open(pdf_path) as pdf:
-                text = ''
-                for page_number, page in enumerate(pdf.pages):
-                    page_text = page.extract_text()
+                text_chunks = []
+                for page in pdf.pages:
+                    page_text = page.extract_text(
+                        x_tolerance=3,
+                        y_tolerance=3
+                    )
+                    
                     if not page_text.strip():
-                        img = page.to_image()
-                        page_text = pytesseract.image_to_string(img.original)
-                    text += page_text + '\n'
-                logging.info(f'Extracted text from {len(pdf.pages)} pages.')
-                print(text)
-                return text
+                        img = page.to_image(resolution=300)
+                        page_text = pytesseract.image_to_string(
+                            img.original,
+                            config='--psm 6'
+                        )
+                    
+                    # page_text = self._clean_extracted_text(page_text)
+                    text_chunks.append(page_text)
+                
+                final_text = '\n'.join(text_chunks)
+                logging.info(f'Extracted {len(text_chunks)} pages of text')
+                return final_text
         except Exception as e:
-            raise Exception(f"Error processing PDF: {str(e)}")
+            logging.error(f"PDF extraction error: {str(e)}")
+            raise
 
     def extract_questions(self, text):
         """Extract questions using regex patterns and structural analysis"""
@@ -177,7 +188,7 @@ class ExamPaperProcessor:
         """Complete pipeline for processing a paper"""
         # Extract text
         raw_text = self.extract_from_pdf(pdf_path)
-        logging.info(f'Raw text extracted: {raw_text[:100]}...')
+        logging.info(f'Raw text extracted: {raw_text}...')
 
         # Extract questions
         questions = self.extract_questions(raw_text)
