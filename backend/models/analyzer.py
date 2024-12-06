@@ -11,7 +11,11 @@ class QuestionAnalyzer:
         
     def analyze(self, processed_data):
         questions = processed_data['questions']
+        # Ensure clusters is a list if it's a NumPy array
         clusters = processed_data['clusters']
+        if isinstance(clusters, np.ndarray):
+            clusters = clusters.tolist()
+        
         question_types = processed_data['question_types']
         
         # Calculate topic frequencies
