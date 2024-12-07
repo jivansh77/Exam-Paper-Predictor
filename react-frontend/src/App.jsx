@@ -10,12 +10,14 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const handleFileUpload = async (file) => {
+  const handleFileUpload = async (files) => {
     setLoading(true)
     setError(null)
     
     const formData = new FormData()
-    formData.append('file', file)
+    files.forEach((file, index) => {
+      formData.append('files[]', file)
+    })
 
     try {
       const response = await fetch('http://127.0.0.1:5000/analyze', {
@@ -31,6 +33,7 @@ function App() {
       setAnalysisData(data)
     } catch (err) {
       setError('Error processing the file. Please try again.')
+      console.error(err)
     } finally {
       setLoading(false)
     }
@@ -47,7 +50,7 @@ function App() {
         {loading && (
           <div className="text-center py-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-            <p className="mt-2">Analyzing paper...</p>
+            <p className="mt-2">Analyzing papers...</p>
           </div>
         )}
 
@@ -58,12 +61,12 @@ function App() {
         )}
 
         {analysisData && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
-            <TopicDistribution topics={analysisData.topics} />
-            <AnalysisSummary results={analysisData.results} />
-            <div className="md:col-span-2">
-              <QuestionsList questions={analysisData.questions} />
+          <div className="space-y-8 mt-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <TopicDistribution topics={analysisData.topics} />
+              <AnalysisSummary results={analysisData.results} />
             </div>
+            <QuestionsList questions={analysisData.questions} />
           </div>
         )}
       </main>

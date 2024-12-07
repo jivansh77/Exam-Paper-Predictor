@@ -3,31 +3,36 @@ import tempfile
 import os
 from config import API_URL
 
-def process_upload(uploaded_file):
-    """Process the uploaded file and send to backend for analysis"""
+def process_upload(uploaded_files):
+    """Process the uploaded files and send to backend for analysis"""
     try:
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-            tmp_file.write(uploaded_file.getvalue())
-            tmp_path = tmp_file.name
+        files = []
+        temp_files = []
         
-        # Send file to backend
-        with open(tmp_path, 'rb') as f:
-            files = {'file': f}
-            response = requests.post(f"{API_URL}/analyze", files=files)
+        # Create temporary files
+        for uploaded_file in uploaded_files:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                temp_files.append(tmp_file.name)
+                files.append(('files[]', open(tmp_file.name, 'rb')))
         
-        # Clean up temp file
-        os.unlink(tmp_path)
+        # Send files to backend
+        response = requests.post(f"{API_URL}/analyze", files=files)
         
-        # Log the response status and content
-        print(f"Response Status: {response.status_code}")
-        print(f"Response Content: {response.text}")
-        
+        # Clean up temp files
+        for temp_file in temp_files:
+            os.unlink(temp_file)
+            
         if response.status_code == 200:
             return response.json()
         else:
+            print(f"Error response: {response.text}")
             return None
             
     except Exception as e:
         print(f"Error processing upload: {str(e)}")
         return None
+    finally:
+        # Ensure all file handles are closed
+        for _, f in files:
+            f.close()

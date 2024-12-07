@@ -12,8 +12,8 @@ class ExamPaperProcessor:
     def __init__(self):
         self.nlp = spacy.load('en_core_web_sm')
         self.tfidf = TfidfVectorizer(max_features=1000)
-        # Don't initialize Doc2Vec here - we'll do it in train_doc2vec
         self.doc2vec = None
+        self.question_frequency = {}  # Track question frequency
         
     def extract_from_pdf(self, pdf_path):
         """Extract text from PDF with improved formatting preservation"""
@@ -216,3 +216,35 @@ class ExamPaperProcessor:
             'question_types': question_types,
             'embeddings': embeddings
         }
+
+    def process_multiple_papers(self, pdf_paths):
+        all_questions = []
+        all_embeddings = []
+        
+        for pdf_path in pdf_paths:
+            paper_data = self.process_paper(pdf_path)
+            
+            # Track question frequency
+            for question in paper_data['questions']:
+                normalized_q = self.normalize_question(question)
+                self.question_frequency[normalized_q] = int(self.question_frequency.get(normalized_q, 0) + 1)  # Convert to int
+            
+            all_questions.extend(paper_data['questions'])
+            all_embeddings.extend(paper_data['embeddings'])
+            
+        # Cluster all questions together
+        clusters = self.cluster_topics(np.array(all_embeddings))
+        clusters = [int(c) for c in clusters]  # Convert to standard Python int
+        
+        return {
+            'questions': all_questions,
+            'clusters': clusters,
+            'question_types': [self.classify_question_type(q) for q in all_questions],
+            'frequencies': {k: int(v) for k, v in self.question_frequency.items()}  # Convert frequencies to int
+        }
+        
+    def normalize_question(self, question):
+        """Normalize question text to identify similar questions"""
+        doc = self.nlp(question.lower())
+        tokens = [token.lemma_ for token in doc if not token.is_stop and not token.is_punct]
+        return ' '.join(sorted(tokens))

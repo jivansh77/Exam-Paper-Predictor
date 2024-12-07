@@ -1,3 +1,4 @@
+import spacy
 from collections import Counter
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -5,18 +6,38 @@ import numpy as np
 
 class QuestionAnalyzer:
     def __init__(self):
+        self.nlp = spacy.load('en_core_web_sm')
         self.tfidf = TfidfVectorizer(max_features=1000)
         self.topics_cache = {}
         self.questions_cache = {}
         
+    def normalize_question(self, question):
+        """Normalize question text to identify similar questions"""
+        doc = self.nlp(question.lower())
+        # Remove stop words and punctuation, lemmatize the remaining tokens
+        tokens = [token.lemma_ for token in doc if not token.is_stop and not token.is_punct]
+        return ' '.join(sorted(tokens))  # Sort tokens for consistent comparison
+        
     def analyze(self, processed_data):
         questions = processed_data['questions']
-        # Ensure clusters is a list if it's a NumPy array
-        clusters = processed_data['clusters']
-        if isinstance(clusters, np.ndarray):
-            clusters = clusters.tolist()
-        
+        clusters = [int(c) for c in processed_data['clusters']]
         question_types = processed_data['question_types']
+        frequencies = processed_data.get('frequencies', {})
+        
+        # Group questions by topic
+        topic_questions = {}
+        for i, cluster in enumerate(clusters):
+            if cluster not in topic_questions:
+                topic_questions[cluster] = []
+            topic_questions[cluster].append({
+                'text': questions[i],
+                'frequency': int(frequencies.get(self.normalize_question(questions[i]), 1)),
+                'type': question_types[i]
+            })
+        
+        # Sort questions by frequency within each topic
+        for topic in topic_questions:
+            topic_questions[topic].sort(key=lambda x: x['frequency'], reverse=True)
         
         # Calculate topic frequencies
         topic_counts = Counter(clusters)
@@ -24,49 +45,40 @@ class QuestionAnalyzer:
         
         topics = []
         for topic_id, count in topic_counts.items():
-            frequency = (count / total_questions) * 100
-            topic_questions = [q for i, q in enumerate(questions) if clusters[i] == topic_id]
+            frequency = float((count / total_questions) * 100)
+            topic_questions_list = [q for i, q in enumerate(questions) if clusters[i] == topic_id]
             
             # Get representative terms for topic
-            tfidf_matrix = self.tfidf.fit_transform(topic_questions)
+            tfidf_matrix = self.tfidf.fit_transform(topic_questions_list)
             feature_names = self.tfidf.get_feature_names_out()
             topic_terms = self._get_top_terms(tfidf_matrix, feature_names)
             
             topics.append({
-                'id': topic_id,
+                'id': int(topic_id),
                 'name': f"Topic {topic_id}: {', '.join(topic_terms[:3])}",
-                'frequency': round(frequency, 2)
+                'frequency': round(float(frequency), 2),
+                'questions': topic_questions[topic_id]
             })
-        
-        # Calculate question relevance scores
-        question_data = []
-        for i, question in enumerate(questions):
-            relevance = self._calculate_relevance(question, topic_questions)
-            question_data.append({
-                'text': question,
-                'type': question_types[i],
-                'topic': topics[clusters[i]]['name'],
-                'relevance': round(relevance * 100, 2)
-            })
-        
-        # Prepare analysis results
+            
+        # Calculate overall statistics
         results = {
-            'totalQuestions': total_questions,
-            'theoryCount': question_types.count('theory'),
-            'numericalCount': question_types.count('numerical'),
+            'totalQuestions': int(len(questions)),
+            'theoryCount': int(question_types.count('theory')),
+            'numericalCount': int(question_types.count('numerical')),
             'patterns': self._identify_patterns(questions, question_types)
         }
         
         return {
             'topics': topics,
-            'questions': question_data,
-            'results': results
+            'results': results,
+            'questions': [q for topic in topic_questions.values() for q in topic]
         }
     
     def _get_top_terms(self, tfidf_matrix, feature_names, n=3):
+        """Get the top terms for a topic based on TF-IDF scores"""
         avg_weights = np.asarray(tfidf_matrix.mean(axis=0)).ravel()
         top_indices = avg_weights.argsort()[-n:][::-1]
-        return [feature_names[i] for i in top_indices]
+        return [str(feature_names[i]) for i in top_indices]
     
     def _calculate_relevance(self, question, topic_questions):
         if not topic_questions:

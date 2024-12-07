@@ -21,6 +21,8 @@ class NumpyEncoder(json.JSONEncoder):
             return float(obj)
         if isinstance(obj, np.ndarray):
             return obj.tolist()
+        if isinstance(obj, np.bool_):
+            return bool(obj)
         return super().default(obj)
 
 app = Flask(__name__)
@@ -44,38 +46,47 @@ def allowed_file(filename):
 
 @app.route('/analyze', methods=['POST'])
 def analyze_paper():
-    logging.info('Received request to analyze paper.')
+    if 'files[]' not in request.files:
+        return jsonify({'error': 'No files provided'}), 400
     
-    if 'file' not in request.files:
-        logging.error('No file provided')
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    logging.info(f'Received file: {file.filename}')
-    
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        logging.info(f'File saved to {filepath}')
+    files = request.files.getlist('files[]')
+    if not files:
+        return jsonify({'error': 'No files uploaded'}), 400
         
-        try:
-            processed_data = processor.process_paper(filepath)
-            # Convert numpy arrays to lists in processed_data
-            processed_data['clusters'] = processed_data['clusters'].tolist()
-            processed_data['embeddings'] = processed_data['embeddings'].tolist()
+    temp_paths = []
+    
+    try:
+        # Save all files temporarily
+        for file in files:
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                temp_paths.append(filepath)
+            else:
+                return jsonify({'error': 'Invalid file type'}), 400
+        
+        if not temp_paths:
+            return jsonify({'error': 'No valid files to process'}), 400
             
-            analysis_results = analyzer.analyze(processed_data)
-            logging.info('File processed successfully.')
-        except Exception as e:
-            logging.error(f'Error processing the file: {e}')
-            return jsonify({'error': 'Error processing the file', 'details': str(e)}), 500
+        # Process all papers together
+        processed_data = processor.process_multiple_papers(temp_paths)
+        analysis_results = analyzer.analyze(processed_data)
         
-        os.remove(filepath)
         return jsonify(analysis_results)
-    
-    logging.error('Invalid file type')
-    return jsonify({'error': 'Invalid file type'}), 400
+        
+    except Exception as e:
+        logging.error(f"Analysis error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+        
+    finally:
+        # Clean up temporary files
+        for path in temp_paths:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception as e:
+                    logging.error(f"Error removing temporary file {path}: {str(e)}")
 
 # Rest of the code remains the same
 if __name__ == '__main__':
