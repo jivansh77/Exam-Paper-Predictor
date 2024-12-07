@@ -7,6 +7,10 @@ import numpy as np
 from models.processor import ExamPaperProcessor
 from models.analyzer import QuestionAnalyzer
 import logging
+from flask_cors import CORS
+
+app = Flask(__name__)
+CORS(app)
 
 # Custom JSON encoder to handle NumPy types
 class NumpyEncoder(json.JSONEncoder):
