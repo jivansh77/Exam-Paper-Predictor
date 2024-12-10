@@ -1,89 +1,125 @@
 import { useState } from 'react'
 
-export default function QuestionsList({ questions }) {
-  const [questionType, setQuestionType] = useState('All')
-  const [minFrequency, setMinFrequency] = useState(1)
-  const [expandedQuestion, setExpandedQuestion] = useState(null)
-
-  const filteredQuestions = questions?.filter(q => 
-    (questionType === 'All' || q.type.toLowerCase() === questionType.toLowerCase()) &&
-    q.frequency >= minFrequency
-  ) || []
+export default function QuestionsList({ questions = [], allQuestions = [], clusters = [] }) {
+  const [activeTab, setActiveTab] = useState('all')
+  const [selectedCluster, setSelectedCluster] = useState(null)
 
   return (
     <div className="bg-white p-6 rounded-lg shadow">
-      <h2 className="text-xl font-semibold mb-4">Common Questions</h2>
-      
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Filter by Type</label>
-          <select
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            value={questionType}
-            onChange={(e) => setQuestionType(e.target.value)}
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            className={`${
+              activeTab === 'all'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap pb-4 px-1 border-b-2 font-medium`}
+            onClick={() => setActiveTab('all')}
           >
-            <option>All</option>
-            <option>Theory</option>
-            <option>Numerical</option>
-          </select>
-        </div>
-        
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Minimum Frequency: {minFrequency}
-          </label>
-          <input
-            type="range"
-            min="1"
-            max="10"
-            value={minFrequency}
-            onChange={(e) => setMinFrequency(Number(e.target.value))}
-            className="mt-1 block w-full"
-          />
-        </div>
+            All Questions ({allQuestions.length})
+          </button>
+          <button
+            className={`${
+              activeTab === 'repeated'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap pb-4 px-1 border-b-2 font-medium`}
+            onClick={() => setActiveTab('repeated')}
+          >
+            Repeated Questions ({questions.length})
+          </button>
+          <button
+            className={`${
+              activeTab === 'clusters'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap pb-4 px-1 border-b-2 font-medium`}
+            onClick={() => setActiveTab('clusters')}
+          >
+            Similar Questions ({clusters.length})
+          </button>
+        </nav>
       </div>
 
-      <div className="space-y-4">
-        {filteredQuestions.map((question, index) => (
-          <div 
-            key={index}
-            className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
-            onClick={() => setExpandedQuestion(expandedQuestion === index ? null : index)}
-          >
-            <div className="flex justify-between items-start">
-              <div className="flex-1">
-                <p className="font-medium text-gray-900">
-                  {question.text.length > 100 
-                    ? `${question.text.substring(0, 100)}...` 
-                    : question.text}
-                </p>
-                {expandedQuestion === index && (
-                  <div className="mt-4 space-y-2">
-                    <p className="text-gray-600"><span className="font-medium">Full Question:</span> {question.text}</p>
-                    <p className="text-gray-600"><span className="font-medium">Type:</span> {question.type}</p>
-                    <p className="text-gray-600">
-                      <span className="font-medium">Frequency:</span> 
-                      {question.frequency} {question.frequency === 1 ? 'time' : 'times'}
-                    </p>
-                  </div>
-                )}
+      {activeTab === 'all' && allQuestions.length === 0 && (
+        <p className="text-gray-500 text-center">No questions found</p>
+      )}
+
+      {activeTab === 'all' && allQuestions.length > 0 && (
+        <div className="space-y-4">
+          {allQuestions.map((question, index) => (
+            <div key={index} className="border rounded p-4">
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex-1">
+                  <p className="font-medium">{question.text || question.question}</p>
+                  <p className="text-sm text-gray-500">Topic: {question.topic}</p>
+                </div>
               </div>
-              <div className="ml-4 flex-shrink-0">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                  ${question.frequency > 1 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
-                  {question.frequency}×
-                </span>
+              <div className="text-sm text-gray-500">
+                Type: {question.type}
               </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
+      )}
 
-        {filteredQuestions.length === 0 && (
-          <div className="text-center py-8 text-gray-500">
-            No questions match the current filters
-          </div>
-        )}
-      </div>
+      {activeTab === 'repeated' && questions.length === 0 && (
+        <p className="text-gray-500 text-center">No repeated questions found</p>
+      )}
+
+      {activeTab === 'repeated' && questions.length > 0 && (
+        <div className="space-y-4">
+          {questions.map((question, index) => (
+            <div key={index} className="border rounded p-4">
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex-1">
+                  <p className="font-medium">{question.question}</p>
+                  <p className="text-sm text-gray-500">Topic: {question.topic}</p>
+                </div>
+                <span className="ml-4 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                  Frequency: {question.frequency}
+                </span>
+              </div>
+              <div className="text-sm text-gray-500">
+                Type: {question.type}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'clusters' && clusters.length > 0 && (
+        <div className="space-y-4">
+          {clusters.map((cluster, index) => (
+            <div key={index} className="border rounded p-4">
+              <div 
+                className="cursor-pointer"
+                onClick={() => setSelectedCluster(selectedCluster === index ? null : index)}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <p className="font-medium">{cluster.main_question}</p>
+                    <p className="text-sm text-gray-500">Topic: {cluster.topic}</p>
+                  </div>
+                  <span className="ml-4 px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                    Similar: {cluster.similar_questions.length}
+                  </span>
+                </div>
+              </div>
+              
+              {selectedCluster === index && (
+                <div className="mt-4 pl-4 border-l-2 border-gray-200 space-y-3">
+                  {cluster.similar_questions.map((question, sIndex) => (
+                    <div key={sIndex} className="text-sm">
+                      <p>{question}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 } 

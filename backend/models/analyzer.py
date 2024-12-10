@@ -1,116 +1,127 @@
-import spacy
 from collections import Counter
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from typing import List, Dict, Any
 import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from dataclasses import dataclass
+import logging
+
+@dataclass
+class AnalysisResult:
+    total_questions: int
+    topic_distribution: Dict[str, float]
+    common_patterns: List[str]
+    question_clusters: List[Dict[str, Any]]
+    repeated_questions: List[Dict[str, Any]]
 
 class QuestionAnalyzer:
     def __init__(self):
-        self.nlp = spacy.load('en_core_web_sm')
         self.tfidf = TfidfVectorizer(max_features=1000)
-        self.topics_cache = {}
-        self.questions_cache = {}
+        logging.getLogger().setLevel(logging.INFO)
+
+    def analyze_papers(self, processor_output: Dict) -> Dict:
+        """
+        Analyze the processed exam papers data
         
-    def normalize_question(self, question):
-        """Normalize question text to identify similar questions"""
-        doc = self.nlp(question.lower())
-        # Remove stop words and punctuation, lemmatize the remaining tokens
-        tokens = [token.lemma_ for token in doc if not token.is_stop and not token.is_punct]
-        return ' '.join(sorted(tokens))  # Sort tokens for consistent comparison
-        
-    def analyze(self, processed_data):
-        questions = processed_data['questions']
-        clusters = [int(c) for c in processed_data['clusters']]
-        question_types = processed_data['question_types']
-        frequencies = processed_data.get('frequencies', {})
-        
-        # Group questions by topic
-        topic_questions = {}
-        for i, cluster in enumerate(clusters):
-            if cluster not in topic_questions:
-                topic_questions[cluster] = []
-            topic_questions[cluster].append({
-                'text': questions[i],
-                'frequency': int(frequencies.get(self.normalize_question(questions[i]), 1)),
-                'type': question_types[i]
-            })
-        
-        # Sort questions by frequency within each topic
-        for topic in topic_questions:
-            topic_questions[topic].sort(key=lambda x: x['frequency'], reverse=True)
-        
-        # Calculate topic frequencies
-        topic_counts = Counter(clusters)
-        total_questions = len(questions)
-        
-        topics = []
-        for topic_id, count in topic_counts.items():
-            frequency = float((count / total_questions) * 100)
-            topic_questions_list = [q for i, q in enumerate(questions) if clusters[i] == topic_id]
-            
-            # Get representative terms for topic
-            tfidf_matrix = self.tfidf.fit_transform(topic_questions_list)
-            feature_names = self.tfidf.get_feature_names_out()
-            topic_terms = self._get_top_terms(tfidf_matrix, feature_names)
-            
-            topics.append({
-                'id': int(topic_id),
-                'name': f"Topic {topic_id}: {', '.join(topic_terms[:3])}",
-                'frequency': round(float(frequency), 2),
-                'questions': topic_questions[topic_id]
-            })
-            
-        # Calculate overall statistics
-        results = {
-            'totalQuestions': int(len(questions)),
-            'theoryCount': int(question_types.count('theory')),
-            'numericalCount': int(question_types.count('numerical')),
-            'patterns': self._identify_patterns(questions, question_types)
-        }
-        
-        return {
-            'topics': topics,
-            'results': results,
-            'questions': [q for topic in topic_questions.values() for q in topic]
-        }
-    
-    def _get_top_terms(self, tfidf_matrix, feature_names, n=3):
-        """Get the top terms for a topic based on TF-IDF scores"""
-        avg_weights = np.asarray(tfidf_matrix.mean(axis=0)).ravel()
-        top_indices = avg_weights.argsort()[-n:][::-1]
-        return [str(feature_names[i]) for i in top_indices]
-    
-    def _calculate_relevance(self, question, topic_questions):
-        if not topic_questions:
-            return 0
-        
-        question_vector = self.tfidf.transform([question])
-        topic_vectors = self.tfidf.transform(topic_questions)
-        similarities = cosine_similarity(question_vector, topic_vectors)
-        return similarities.mean()
-    
-    def _identify_patterns(self, questions, types):
+        Args:
+            processor_output: Output from ExamPaperProcessor containing questions, 
+                            topics, similar groups, and frequencies
+        """
+        try:
+            logging.info("Starting analysis...")
+            questions = processor_output['questions']
+            topics = processor_output['topics']  # This is now a list of strings
+            similar_groups = processor_output['similar_groups']
+            frequencies = processor_output['frequencies']
+
+            # Calculate topic distribution
+            topic_counts = Counter(q['topic'] for q in questions)  # Get topics from questions instead
+            total = sum(topic_counts.values())
+            topic_distribution = {
+                topic: (count / total) * 100 
+                for topic, count in topic_counts.items()
+            }
+
+            # Get top topics
+            top_topics = dict(sorted(
+                topic_distribution.items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )[:5])
+
+            # Process question patterns
+            patterns = self._identify_patterns(questions)
+
+            # Process similar questions
+            question_clusters = self._process_similar_groups(
+                questions, similar_groups
+            )
+
+            # Get repeated questions
+            repeated_questions = self._get_repeated_questions(
+                questions, frequencies
+            )
+
+            analysis_result = {
+                'total_questions': len(questions),
+                'unique_topics': len(topic_counts),
+                'topic_distribution': topic_distribution,
+                'top_topics': top_topics,
+                'patterns': patterns,
+                'question_clusters': question_clusters,
+                'repeated_questions': repeated_questions
+            }
+
+            logging.info("Analysis completed successfully")
+            return analysis_result
+
+        except Exception as e:
+            logging.error(f"Error in analysis: {str(e)}", exc_info=True)
+            raise
+
+    def _identify_patterns(self, questions: List[Dict]) -> List[str]:
+        """Identify patterns in questions"""
         patterns = []
         
-        # Theory vs Numerical distribution
-        theory_ratio = types.count('theory') / len(types)
-        if theory_ratio > 0.7:
-            patterns.append("Strong focus on theoretical questions")
-        elif theory_ratio < 0.3:
-            patterns.append("Strong focus on numerical problems")
+        # Count question types
+        type_counts = Counter(q['type'] for q in questions)
+        total = len(questions)
         
-        # Question length patterns
-        lengths = [len(q.split()) for q in questions]
-        avg_length = sum(lengths) / len(lengths)
-        if avg_length > 30:
-            patterns.append("Questions tend to be detailed and lengthy")
-        elif avg_length < 15:
-            patterns.append("Questions are typically concise")
+        # Add type distribution pattern
+        for qtype, count in type_counts.items():
+            percentage = (count / total) * 100
+            patterns.append(f"{percentage:.1f}% of questions are {qtype} type")
             
         return patterns
-    
-    def get_topics(self):
-        return list(self.topics_cache.values())
-    
-    def get_questions_by_topic(self, topic_id):
-        return self.questions_cache.get(topic_id, [])
+
+    def _process_similar_groups(self, questions: List[Dict], similar_groups: Dict) -> List[Dict]:
+        """Process similar question groups"""
+        clusters = []
+        
+        for main_idx, similar_indices in similar_groups.items():
+            clusters.append({
+                'main_question': questions[main_idx]['text'],
+                'similar_questions': [questions[idx]['text'] for idx in similar_indices],
+                'topic': questions[main_idx]['topic']
+            })
+            
+        return clusters
+
+    def _get_repeated_questions(self, questions: List[Dict], frequencies: Dict) -> List[Dict]:
+        """Get frequently repeated questions"""
+        repeated = []
+        
+        for q in questions:
+            freq = frequencies.get(q['text'], 1)
+            if freq > 1:  # Only include questions that appear more than once
+                repeated.append({
+                    'question': q['text'],
+                    'topic': q['topic'],
+                    'type': q['type'],
+                    'frequency': freq,
+                    'confidence': 1.0  # You might want to calculate this differently
+                })
+                
+        # Sort by frequency
+        repeated.sort(key=lambda x: x['frequency'], reverse=True)
+        
+        return repeated

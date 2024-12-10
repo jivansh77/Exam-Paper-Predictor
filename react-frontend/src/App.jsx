@@ -5,7 +5,7 @@ import QuestionsList from './components/QuestionsList'
 import Sidebar from './components/Sidebar'
 import FileUpload from './components/FileUpload'
 
-function App() {
+export default function App() {
   const [analysisData, setAnalysisData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -14,26 +14,50 @@ function App() {
     setLoading(true)
     setError(null)
     
-    const formData = new FormData()
-    files.forEach((file, index) => {
-      formData.append('files[]', file)
-    })
-
     try {
+      const formData = new FormData()
+      files.forEach(file => formData.append('files[]', file))
+      
       const response = await fetch('http://127.0.0.1:5000/analyze', {
         method: 'POST',
         body: formData,
       })
-
+      
       if (!response.ok) {
-        throw new Error('Failed to analyze file')
+        throw new Error('Analysis failed')
       }
-
+      
       const data = await response.json()
-      setAnalysisData(data)
+      console.log('Received data:', data)
+      
+      const transformedData = {
+        analysis: {
+          topic_distribution: data.topic_distribution || {},
+          all_questions: (data.questions || []).map(q => ({
+            text: q.text,
+            topic: q.topic,
+            type: q.type
+          })),
+          repeated_questions: data.repeated_questions || [],
+          question_clusters: data.similar_groups || []
+        },
+        summary: {
+          total_questions: data.total_questions || 0,
+          unique_topics: data.unique_topics || 0,
+          top_topics: Object.fromEntries(
+            Object.entries(data.topic_distribution || {})
+              .sort(([,a], [,b]) => b - a)
+              .slice(0, 5)
+          ),
+          patterns: data.patterns || []
+        }
+      }
+      
+      console.log('Transformed data:', transformedData)
+      setAnalysisData(transformedData)
     } catch (err) {
-      setError('Error processing the file. Please try again.')
-      console.error(err)
+      setError(err.message)
+      console.error('Error:', err)
     } finally {
       setLoading(false)
     }
@@ -42,36 +66,42 @@ function App() {
   return (
     <div className="flex min-h-screen bg-gray-100">
       <Sidebar />
+      
       <main className="flex-1 p-8">
         <h1 className="text-3xl font-bold mb-8">Exam Paper Analyzer</h1>
         
         <FileUpload onUpload={handleFileUpload} />
         
         {loading && (
-          <div className="text-center py-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
-            <p className="mt-2">Analyzing papers...</p>
+          <div className="mt-8 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Analyzing papers...</p>
           </div>
         )}
-
+        
         {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          <div className="mt-8 p-4 bg-red-100 text-red-700 rounded">
             {error}
           </div>
         )}
-
+        
         {analysisData && (
-          <div className="space-y-8 mt-8">
+          <div className="mt-8 space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <TopicDistribution topics={analysisData.topics} />
-              <AnalysisSummary results={analysisData.results} />
+              <TopicDistribution 
+                topics={analysisData.analysis.topic_distribution} 
+                questions={analysisData.analysis.repeated_questions}
+              />
+              <AnalysisSummary summary={analysisData.summary} />
             </div>
-            <QuestionsList questions={analysisData.questions} />
+            <QuestionsList 
+              questions={analysisData.analysis.repeated_questions}
+              allQuestions={analysisData.analysis.all_questions}
+              clusters={analysisData.analysis.question_clusters} 
+            />
           </div>
         )}
       </main>
     </div>
   )
 }
-
-export default App

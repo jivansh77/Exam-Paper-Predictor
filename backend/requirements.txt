@@ -8,3 +8,9 @@ pytesseract==0.3.10
 gensim==4.3.2
 python-dotenv==1.0.0
 gunicorn==21.2.0
+transformers
+torch
+sentence-transformers
+pdf2image==1.16.3
+Pillow==9.5.0
+huggingface-hub==0.19.4
